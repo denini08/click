@@ -923,10 +923,10 @@ class Path(ParamType):
 
     def convert(
         self,
-        value: str | os.PathLike[str],
+        value: Union[str, PathLike[str]],
         param: Parameter | None,
         ctx: Context | None,
-    ) -> str | bytes | os.PathLike[str]:
+    ) -> Union[str, bytes, PathLike[str]]:
         rv = value
 
         is_dash = self.file_okay and self.allow_dash and rv in (b"-", "-")
@@ -965,32 +965,41 @@ class Path(ParamType):
                     ctx,
                 )
 
-            if self.readable and not os.access(rv, os.R_OK):
-                self.fail(
-                    _("{name} {filename!r} is not readable.").format(
-                        name=self.name.title(), filename=format_filename(value)
-                    ),
-                    param,
-                    ctx,
-                )
+            if self.readable:
+                try:
+                    with open(rv, 'r') as f:
+                        pass  # Attempt to open for reading
+                except (PermissionError, OSError):
+                    self.fail(
+                        _("{name} {filename!r} is not readable.").format(
+                            name=self.name.title(), filename=format_filename(value)
+                        ),
+                        param,
+                        ctx,
+                    )
 
-            if self.writable and not os.access(rv, os.W_OK):
-                self.fail(
-                    _("{name} {filename!r} is not writable.").format(
-                        name=self.name.title(), filename=format_filename(value)
-                    ),
-                    param,
-                    ctx,
-                )
+            if self.writable:
+                try:
+                    with open(rv, 'a') as f:
+                        pass  # Attempt to open for appending (checks writability)
+                except (PermissionError, OSError):
+                    self.fail(
+                        _("{name} {filename!r} is not writable.").format(
+                            name=self.name.title(), filename=format_filename(value)
+                        ),
+                        param,
+                        ctx,
+                    )
 
-            if self.executable and not os.access(value, os.X_OK):
-                self.fail(
-                    _("{name} {filename!r} is not executable.").format(
-                        name=self.name.title(), filename=format_filename(value)
-                    ),
-                    param,
-                    ctx,
-                )
+            if self.executable:
+                if not stat.S_ISREG(st.st_mode) or not (st.st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)):
+                    self.fail(
+                        _("{name} {filename!r} is not executable.").format(
+                            name=self.name.title(), filename=format_filename(value)
+                        ),
+                        param,
+                        ctx,
+                    )
 
         return self.coerce_path_result(rv)
 
